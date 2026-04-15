@@ -49,19 +49,22 @@ describe("fetchLogo (unit)", () => {
 	});
 
 	it("rejects image/x-icon and falls through to the next source", async () => {
+		// Simple Icons fails → favicon.ico returns x-icon (rejected) → Google returns png (accepted)
 		const spy = vi
 			.spyOn(global, "fetch")
+			.mockResolvedValueOnce(mockFetchResponse({ ok: false })) // Simple Icons fails
 			.mockResolvedValueOnce(mockFetchResponse({ mimeType: "image/x-icon" })) // favicon.ico → rejected
 			.mockResolvedValueOnce(mockFetchResponse({ mimeType: "image/png" })); // Google → accepted
 
 		const result = await fetchLogo("github.com");
 
 		expect(result).toMatch(/^data:image\/png;base64,/);
-		expect(spy).toHaveBeenCalledTimes(2);
+		expect(spy).toHaveBeenCalledTimes(3);
 	});
 
 	it("rejects image/vnd.microsoft.icon the same way", async () => {
 		vi.spyOn(global, "fetch")
+			.mockResolvedValueOnce(mockFetchResponse({ ok: false })) // Simple Icons fails
 			.mockResolvedValueOnce(mockFetchResponse({ mimeType: "image/vnd.microsoft.icon" }))
 			.mockResolvedValueOnce(mockFetchResponse({ mimeType: "image/png" }));
 
@@ -99,27 +102,126 @@ describe("fetchLogo (unit)", () => {
 		expect(result).toMatch(/^data:image\/png;base64,[A-Za-z0-9+/]+=*$/);
 	});
 
-	it("tries logo.dev first when an apiKey is provided", async () => {
+	// ── Source: auto ─────────────────────────────────────────────────────────
+
+	it("tries Simple Icons first in auto mode", async () => {
+		const spy = vi
+			.spyOn(global, "fetch")
+			.mockResolvedValue(mockFetchResponse({ mimeType: "image/svg+xml" }));
+
+		await fetchLogo("github.com");
+
+		const firstUrl = spy.mock.calls[0][0] as string;
+		expect(firstUrl).toContain("cdn.simpleicons.org");
+		expect(firstUrl).toContain("github");
+		expect(spy).toHaveBeenCalledTimes(1);
+	});
+
+	it("tries logo.dev second in auto mode when an apiKey is provided and Simple Icons fails", async () => {
+		const spy = vi
+			.spyOn(global, "fetch")
+			.mockResolvedValueOnce(mockFetchResponse({ ok: false, status: 404 })) // Simple Icons fails
+			.mockResolvedValue(mockFetchResponse({ mimeType: "image/png" })); // logo.dev succeeds
+
+		await fetchLogo("github.com", { apiKey: "pk_test_key" });
+
+		const urls = spy.mock.calls.map((c) => c[0] as string);
+		expect(urls[0]).toContain("cdn.simpleicons.org");
+		expect(urls[1]).toContain("img.logo.dev");
+		expect(urls[1]).toContain("pk_test_key");
+		expect(spy).toHaveBeenCalledTimes(2);
+	});
+
+	it("falls back to favicon when Simple Icons and logo.dev both fail", async () => {
+		const spy = vi
+			.spyOn(global, "fetch")
+			.mockResolvedValueOnce(mockFetchResponse({ ok: false, status: 404 })) // Simple Icons fails
+			.mockResolvedValueOnce(mockFetchResponse({ ok: false, status: 403 })) // logo.dev fails
+			.mockResolvedValueOnce(mockFetchResponse({ mimeType: "image/png" })); // favicon succeeds
+
+		const result = await fetchLogo("github.com", { apiKey: "pk_test_key" });
+		expect(result).toMatch(/^data:image\/png;base64,/);
+		expect(spy).toHaveBeenCalledTimes(3);
+	});
+
+	it("appends the color to the Simple Icons URL when provided", async () => {
+		const spy = vi
+			.spyOn(global, "fetch")
+			.mockResolvedValue(mockFetchResponse({ mimeType: "image/svg+xml" }));
+
+		await fetchLogo("github.com", { color: "ffffff" });
+
+		const firstUrl = spy.mock.calls[0][0] as string;
+		expect(firstUrl).toContain("cdn.simpleicons.org");
+		expect(firstUrl).toContain("/ffffff");
+	});
+
+	// ── Source: simpleicons ───────────────────────────────────────────────────
+
+	it("only calls Simple Icons CDN when source is 'simpleicons' and it succeeds", async () => {
+		const spy = vi
+			.spyOn(global, "fetch")
+			.mockResolvedValue(mockFetchResponse({ mimeType: "image/svg+xml" }));
+
+		const result = await fetchLogo("github.com", { source: "simpleicons" });
+
+		expect(result).toMatch(/^data:image\/svg\+xml;base64,/);
+		expect(spy).toHaveBeenCalledTimes(1);
+		expect(spy.mock.calls[0][0] as string).toContain("cdn.simpleicons.org");
+	});
+
+	it("falls back to favicon when source is 'simpleicons' and CDN returns nothing", async () => {
+		const spy = vi
+			.spyOn(global, "fetch")
+			.mockResolvedValueOnce(mockFetchResponse({ ok: false, status: 404 })) // Simple Icons fails
+			.mockResolvedValueOnce(mockFetchResponse({ mimeType: "image/png" })); // favicon succeeds
+
+		const result = await fetchLogo("github.com", { source: "simpleicons" });
+
+		expect(result).toMatch(/^data:image\/png;base64,/);
+		// Should NOT call logo.dev even if an apiKey was supplied
+		const urls = spy.mock.calls.map((c) => c[0] as string);
+		expect(urls.every((u) => !u.includes("img.logo.dev"))).toBe(true);
+	});
+
+	// ── Source: logodev ───────────────────────────────────────────────────────
+
+	it("only calls logo.dev when source is 'logodev' and apiKey is provided", async () => {
 		const spy = vi
 			.spyOn(global, "fetch")
 			.mockResolvedValue(mockFetchResponse({ mimeType: "image/png" }));
 
-		await fetchLogo("github.com", "pk_test_key");
+		const result = await fetchLogo("github.com", { source: "logodev", apiKey: "pk_test_key" });
 
-		const firstCall = spy.mock.calls[0][0] as string;
-		expect(firstCall).toContain("img.logo.dev");
-		expect(firstCall).toContain("pk_test_key");
+		expect(result).toMatch(/^data:image\/png;base64,/);
+		expect(spy).toHaveBeenCalledTimes(1);
+		const firstUrl = spy.mock.calls[0][0] as string;
+		expect(firstUrl).toContain("img.logo.dev");
+		expect(firstUrl).toContain("pk_test_key");
+		// Should NOT call Simple Icons
+		expect(firstUrl).not.toContain("cdn.simpleicons.org");
 	});
 
-	it("falls back to favicon when logo.dev fails", async () => {
+	it("falls back to favicon when source is 'logodev' and logo.dev fails", async () => {
 		const spy = vi
 			.spyOn(global, "fetch")
 			.mockResolvedValueOnce(mockFetchResponse({ ok: false, status: 403 })) // logo.dev fails
 			.mockResolvedValueOnce(mockFetchResponse({ mimeType: "image/png" })); // favicon succeeds
 
-		const result = await fetchLogo("github.com", "pk_test_key");
+		const result = await fetchLogo("github.com", { source: "logodev", apiKey: "pk_test_key" });
 		expect(result).toMatch(/^data:image\/png;base64,/);
 		expect(spy).toHaveBeenCalledTimes(2);
+	});
+
+	it("skips logo.dev entirely when source is 'logodev' but no apiKey is provided", async () => {
+		const spy = vi
+			.spyOn(global, "fetch")
+			.mockResolvedValue(mockFetchResponse({ mimeType: "image/png" }));
+
+		await fetchLogo("github.com", { source: "logodev" });
+
+		const urls = spy.mock.calls.map((c) => c[0] as string);
+		expect(urls.every((u) => !u.includes("img.logo.dev"))).toBe(true);
 	});
 
 	it("handles fetch throwing (network error) gracefully", async () => {
@@ -147,19 +249,32 @@ function assertRealLogo(result: string | null, source: string) {
 	expect(bytes, `${source}: image payload too small (${bytes} bytes) — likely a placeholder or empty response`).toBeGreaterThan(64);
 }
 
-describe.skipIf(!apiKey)("fetchLogo integration (live network)", () => {
+describe("fetchLogo integration (live network, Simple Icons)", () => {
+	it("fetches a real SVG for github.com via Simple Icons", { timeout: 10_000 }, async () => {
+		const result = await fetchLogo("github.com", { source: "simpleicons" });
+		assertRealLogo(result, "Simple Icons");
+		expect(result).toMatch(/^data:image\/svg\+xml;base64,/);
+	});
+
+	it("fetches a colored SVG for github.com via Simple Icons", { timeout: 10_000 }, async () => {
+		const result = await fetchLogo("github.com", { source: "simpleicons", color: "ffffff" });
+		assertRealLogo(result, "Simple Icons (colored)");
+	});
+
+	it("returns null for a made-up domain", { timeout: 10_000 }, async () => {
+		const result = await fetchLogo("this-domain-definitely-does-not-exist-xyz-123.com");
+		expect(result).toBeNull();
+	});
+});
+
+describe.skipIf(!apiKey)("fetchLogo integration (live network, logo.dev)", () => {
 	it("fetches a real logo via logo.dev for github.com", { timeout: 10_000 }, async () => {
-		const result = await fetchLogo("github.com", apiKey);
+		const result = await fetchLogo("github.com", { source: "logodev", apiKey });
 		assertRealLogo(result, "logo.dev");
 	});
 
 	it("fetches a real logo via Google fallback for github.com", { timeout: 10_000 }, async () => {
 		const result = await fetchLogo("github.com");
 		assertRealLogo(result, "Google fallback");
-	});
-
-	it("returns null for a made-up domain", { timeout: 10_000 }, async () => {
-		const result = await fetchLogo("this-domain-definitely-does-not-exist-xyz-123.com");
-		expect(result).toBeNull();
 	});
 });

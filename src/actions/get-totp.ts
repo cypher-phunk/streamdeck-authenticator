@@ -11,16 +11,22 @@ import type { KeyAction } from "@elgato/streamdeck";
 import clipboard from "clipboardy";
 import { TOTP, Secret } from "otpauth";
 import { applyEncryptionPreference, decryptSecret } from "../encryption.js";
-import { fetchLogo } from "../logo.js";
-import { GlobalSettings, getGlobalSettings, onGlobalSettingsChanged } from "../globals.js";
+import { fetchLogo, LogoSource } from "../logo.js";
+import { GlobalSettings, getGlobalSettings, onGlobalSettingsChanged, whenGlobalSettingsReady } from "../globals.js";
 import { renderButton } from "../render.js";
-import { resolveOutputType, typeText } from "../utils.js";
+import { parseOtpauthUri, resolveOutputType, typeText } from "../utils.js";
 
 type TotpSettings = {
 	secret?: string;
+	digits?: number;
+	period?: number;
+	algorithm?: string;
+	issuer?: string;
 	output?: string | [string[], string | null];
 	website?: string;
 	logoData?: string;
+	logoSource?: LogoSource;
+	logoColor?: string;
 };
 
 @action({ UUID: "com.cypher-phunk.otp.gettotp" })
@@ -51,19 +57,23 @@ export class GetTOTP extends SingletonAction<TotpSettings> {
 
 	override async onWillAppear(ev: WillAppearEvent<TotpSettings>): Promise<void> {
 		const keyAction = ev.action as KeyAction<TotpSettings>;
-		// Set buttonActions first so onDidReceiveSettings (triggered by setSettings below) can find it.
 		this.buttonActions.set(ev.action.id, keyAction);
+		this.settingsCache.set(ev.action.id, ev.payload.settings);
+
+		// Start the timer immediately so the button renders without delay.
+		this.startTimer(ev.action.id);
+
+		// Wait for the first getGlobalSettings response before running migration.
+		// Without this, onWillAppear can fire before encryptSecrets is known,
+		// causing already-encrypted secrets to be decrypted to plaintext on disk.
+		await whenGlobalSettingsReady();
 
 		const { encryptSecrets } = getGlobalSettings();
 		const updated = applyEncryptionPreference(ev.payload.settings, encryptSecrets ?? false);
 		if (updated) {
 			await keyAction.setSettings(updated);
-			// onDidReceiveSettings will populate settingsCache and start the timer.
-			return;
+			// onDidReceiveSettings will update settingsCache with the migrated value.
 		}
-
-		this.settingsCache.set(ev.action.id, ev.payload.settings);
-		this.startTimer(ev.action.id, ev.payload.settings);
 	}
 
 	override onWillDisappear(ev: WillDisappearEvent<TotpSettings>): void {
@@ -75,6 +85,11 @@ export class GetTOTP extends SingletonAction<TotpSettings> {
 	override async onDidReceiveSettings(ev: DidReceiveSettingsEvent<TotpSettings>): Promise<void> {
 		const keyAction = ev.action as KeyAction<TotpSettings>;
 		const { encryptSecrets } = getGlobalSettings();
+
+		// Always update cache and action ref first — the timer reads from here.
+		this.buttonActions.set(ev.action.id, keyAction);
+		this.settingsCache.set(ev.action.id, ev.payload.settings);
+
 		const updated = applyEncryptionPreference(ev.payload.settings, encryptSecrets ?? false);
 		if (updated) {
 			await keyAction.setSettings(updated);
@@ -82,14 +97,18 @@ export class GetTOTP extends SingletonAction<TotpSettings> {
 			return;
 		}
 
-		this.stopTimer(ev.action.id);
-		this.buttonActions.set(ev.action.id, keyAction);
-		this.settingsCache.set(ev.action.id, ev.payload.settings);
-		this.startTimer(ev.action.id, ev.payload.settings);
+		// Ensure the timer is running (it may not be if the action was just added).
+		if (!this.timers.has(ev.action.id)) {
+			this.startTimer(ev.action.id);
+		} else {
+			// Timer is already running and will pick up the new cache on its next tick,
+			// but also refresh immediately so the user sees the code right away.
+			await this.refreshDisplay(keyAction, ev.payload.settings);
+		}
 	}
 
 	override async onKeyDown(ev: KeyDownEvent<TotpSettings>): Promise<void> {
-		const { secret: rawSecret, output } = ev.payload.settings;
+		const { secret: rawSecret, digits, period, algorithm, output } = ev.payload.settings;
 		const outputType = resolveOutputType(output);
 		const secret = rawSecret ? decryptSecret(rawSecret) : null;
 
@@ -100,7 +119,12 @@ export class GetTOTP extends SingletonAction<TotpSettings> {
 
 		let token: string;
 		try {
-			const totp = new TOTP({ secret: Secret.fromBase32(secret) });
+			const totp = new TOTP({
+				secret: Secret.fromBase32(secret),
+				digits: digits ?? 6,
+				period: period ?? 30,
+				algorithm: algorithm ?? "SHA1",
+			});
 			token = totp.generate();
 		} catch {
 			await ev.action.showAlert();
@@ -124,7 +148,31 @@ export class GetTOTP extends SingletonAction<TotpSettings> {
 		await ev.action.showOk();
 	}
 
-	override async onSendToPlugin(ev: SendToPluginEvent<{ type: string; website?: string }, TotpSettings>): Promise<void> {
+	override async onSendToPlugin(ev: SendToPluginEvent<{ type: string; website?: string; uri?: string; source?: string; color?: string }, TotpSettings>): Promise<void> {
+		if (ev.payload.type === "parseUri") {
+			const parsed = parseOtpauthUri(ev.payload.uri ?? "");
+			if (!parsed || parsed.type !== "totp") {
+				await streamDeck.ui.sendToPropertyInspector({ type: "uriFailed" });
+				return;
+			}
+			const currentSettings = this.settingsCache.get(ev.action.id) ?? {};
+			const newSettings: TotpSettings = {
+				...currentSettings,
+				secret: parsed.secret,
+				...(parsed.digits    !== undefined && { digits:    parsed.digits }),
+				...(parsed.period    !== undefined && { period:    parsed.period }),
+				...(parsed.algorithm !== undefined && { algorithm: parsed.algorithm }),
+				...(parsed.issuer    !== undefined && { issuer:    parsed.issuer }),
+			};
+			// Update cache now so the timer shows the new code before onDidReceiveSettings fires.
+			this.settingsCache.set(ev.action.id, newSettings);
+			await (ev.action as KeyAction<TotpSettings>).setSettings(newSettings);
+			await streamDeck.ui.sendToPropertyInspector({ type: "uriImported", issuer: parsed.issuer });
+			// Refresh immediately — onDidReceiveSettings will also fire (and encrypt if needed).
+			await this.refreshDisplay(ev.action as KeyAction<TotpSettings>, newSettings);
+			return;
+		}
+
 		if (ev.payload.type !== "loadLogo") return;
 
 		const keyAction = ev.action as KeyAction<TotpSettings>;
@@ -133,28 +181,40 @@ export class GetTOTP extends SingletonAction<TotpSettings> {
 		if (!website) return;
 
 		const { logoDevApiKey } = getGlobalSettings();
-		const logoData = await fetchLogo(website, logoDevApiKey);
+		const source = (ev.payload.source || currentSettings.logoSource) as LogoSource | undefined;
+		const color = ev.payload.color ?? currentSettings.logoColor;
+		const logoData = await fetchLogo(website, { apiKey: logoDevApiKey, source, color });
 		if (!logoData) {
 			await streamDeck.ui.sendToPropertyInspector({ type: "logoFailed" });
 			return;
 		}
 
 		const newSettings: TotpSettings = { ...currentSettings, logoData };
+		// Update cache directly so the timer picks up the new logo without waiting for
+		// onDidReceiveSettings, and persist to storage.
+		this.settingsCache.set(ev.action.id, newSettings);
 		await keyAction.setSettings(newSettings);
+		// Refresh immediately — don't wait for onDidReceiveSettings or the next timer tick.
+		await this.refreshDisplay(keyAction, newSettings);
 		await streamDeck.ui.sendToPropertyInspector({ type: "logoLoaded" });
-		// onDidReceiveSettings will fire and restart the timer with the updated settings.
 	}
 
 	// ── Timer management ──────────────────────────────────────────────────────
 
-	private startTimer(actionId: string, settings: TotpSettings): void {
+	/**
+	 * Starts (or restarts) the 1-second display timer for the given action.
+	 * Each tick reads from settingsCache so it always reflects the latest settings
+	 * without needing to be restarted whenever settings change.
+	 */
+	private startTimer(actionId: string): void {
+		this.stopTimer(actionId);
 		const tick = async () => {
 			const keyAction = this.buttonActions.get(actionId);
-			if (!keyAction) return;
+			const settings = this.settingsCache.get(actionId);
+			if (!keyAction || !settings) return;
 			await this.refreshDisplay(keyAction, settings);
 		};
-
-		tick();
+		void tick();
 		this.timers.set(actionId, setInterval(tick, 1000));
 	}
 
@@ -169,9 +229,9 @@ export class GetTOTP extends SingletonAction<TotpSettings> {
 	// ── Display ───────────────────────────────────────────────────────────────
 
 	private async refreshDisplay(keyAction: KeyAction<TotpSettings>, settings: TotpSettings): Promise<void> {
-		const { secret: rawSecret, logoData } = settings;
+		const { secret: rawSecret, digits, period, algorithm, logoData } = settings;
 		const secret = rawSecret ? decryptSecret(rawSecret) : null;
-		const { fontFamily } = getGlobalSettings();
+		const { fontFamily, timerStyle } = getGlobalSettings();
 
 		if (!secret) {
 			const image = renderButton({ logoData, fontFamily });
@@ -184,10 +244,16 @@ export class GetTOTP extends SingletonAction<TotpSettings> {
 		}
 
 		try {
-			const totp = new TOTP({ secret: Secret.fromBase32(secret) });
+			const p = period ?? 30;
+			const totp = new TOTP({
+				secret: Secret.fromBase32(secret),
+				digits: digits ?? 6,
+				period: p,
+				algorithm: algorithm ?? "SHA1",
+			});
 			const token = totp.generate();
-			const remaining = 30 - (Math.floor(Date.now() / 1000) % 30);
-			const image = renderButton({ token, remaining, logoData, fontFamily });
+			const remaining = p - (Math.floor(Date.now() / 1000) % p);
+			const image = renderButton({ token, remaining, period: p, logoData, fontFamily, timerStyle });
 			if (image) {
 				await keyAction.setImage(image);
 			} else {

@@ -10,8 +10,8 @@ import type { KeyAction } from "@elgato/streamdeck";
 import clipboard from "clipboardy";
 import { HOTP, Secret } from "otpauth";
 import { applyEncryptionPreference, decryptSecret } from "../encryption.js";
-import { fetchLogo } from "../logo.js";
-import { GlobalSettings, getGlobalSettings, onGlobalSettingsChanged } from "../globals.js";
+import { fetchLogo, LogoSource } from "../logo.js";
+import { GlobalSettings, getGlobalSettings, onGlobalSettingsChanged, whenGlobalSettingsReady } from "../globals.js";
 import { renderButton } from "../render.js";
 import { resolveOutputType, typeText } from "../utils.js";
 
@@ -22,6 +22,8 @@ type HotpSettings = {
 	output?: string | [string[], string | null];
 	website?: string;
 	logoData?: string;
+	logoSource?: LogoSource;
+	logoColor?: string;
 };
 
 @action({ UUID: "com.cypher-phunk.otp.gethotp" })
@@ -50,19 +52,25 @@ export class GetHOTP extends SingletonAction<HotpSettings> {
 
 	override async onWillAppear(ev: WillAppearEvent<HotpSettings>): Promise<void> {
 		const keyAction = ev.action as KeyAction<HotpSettings>;
-		// Set buttonActions first so onDidReceiveSettings (triggered by setSettings below) can find it.
 		this.buttonActions.set(ev.action.id, keyAction);
+		// Populate cache immediately so onSendToPlugin (loadLogo) always has current settings,
+		// even during the brief window while an encryption migration is in flight.
+		this.settingsCache.set(ev.action.id, ev.payload.settings);
+
+		// Render the button immediately so the user sees something right away.
+		await this.refreshDisplay(keyAction, ev.payload.settings);
+
+		// Wait for the first getGlobalSettings response before running migration.
+		// Without this, onWillAppear can fire before encryptSecrets is known,
+		// causing already-encrypted secrets to be decrypted to plaintext on disk.
+		await whenGlobalSettingsReady();
 
 		const { encryptSecrets } = getGlobalSettings();
 		const updated = applyEncryptionPreference(ev.payload.settings, encryptSecrets ?? false);
 		if (updated) {
 			await keyAction.setSettings(updated);
-			// onDidReceiveSettings will populate settingsCache and refresh the display.
-			return;
+			// onDidReceiveSettings will update settingsCache and refresh the display.
 		}
-
-		this.settingsCache.set(ev.action.id, ev.payload.settings);
-		await this.refreshDisplay(keyAction, ev.payload.settings);
 	}
 
 	override async onDidReceiveSettings(ev: DidReceiveSettingsEvent<HotpSettings>): Promise<void> {
@@ -70,6 +78,9 @@ export class GetHOTP extends SingletonAction<HotpSettings> {
 		const { encryptSecrets } = getGlobalSettings();
 		const updated = applyEncryptionPreference(ev.payload.settings, encryptSecrets ?? false);
 		if (updated) {
+			// Keep cache current (pre-migration) so loadLogo can't wipe the secret
+			// in the window before the second onDidReceiveSettings fires.
+			this.settingsCache.set(ev.action.id, ev.payload.settings);
 			await keyAction.setSettings(updated);
 			// onDidReceiveSettings will fire again once the migration is persisted.
 			return;
@@ -130,7 +141,7 @@ export class GetHOTP extends SingletonAction<HotpSettings> {
 		await ev.action.showOk();
 	}
 
-	override async onSendToPlugin(ev: SendToPluginEvent<{ type: string; website?: string }, HotpSettings>): Promise<void> {
+	override async onSendToPlugin(ev: SendToPluginEvent<{ type: string; website?: string; source?: string; color?: string }, HotpSettings>): Promise<void> {
 		if (ev.payload.type !== "loadLogo") return;
 
 		const keyAction = ev.action as KeyAction<HotpSettings>;
@@ -139,16 +150,21 @@ export class GetHOTP extends SingletonAction<HotpSettings> {
 		if (!website) return;
 
 		const { logoDevApiKey } = getGlobalSettings();
-		const logoData = await fetchLogo(website, logoDevApiKey);
+		const source = (ev.payload.source || currentSettings.logoSource) as LogoSource | undefined;
+		const color = ev.payload.color ?? currentSettings.logoColor;
+		const logoData = await fetchLogo(website, { apiKey: logoDevApiKey, source, color });
 		if (!logoData) {
 			await streamDeck.ui.sendToPropertyInspector({ type: "logoFailed" });
 			return;
 		}
 
 		const newSettings: HotpSettings = { ...currentSettings, logoData };
+		// Update cache directly so refreshDisplay below uses the new logo immediately.
+		this.settingsCache.set(ev.action.id, newSettings);
 		await keyAction.setSettings(newSettings);
+		// Refresh immediately — don't wait for onDidReceiveSettings.
+		await this.refreshDisplay(keyAction, newSettings);
 		await streamDeck.ui.sendToPropertyInspector({ type: "logoLoaded" });
-		// onDidReceiveSettings will fire and refresh the display.
 	}
 
 	// ── Display ───────────────────────────────────────────────────────────────

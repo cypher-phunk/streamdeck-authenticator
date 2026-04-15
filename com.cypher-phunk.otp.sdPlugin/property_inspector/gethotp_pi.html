@@ -135,6 +135,17 @@
         <label style="padding-top:4px">Logo</label>
         <div style="flex:1; display:flex; flex-direction:column; gap:6px">
             <div style="display:flex; gap:6px; align-items:center">
+                <select id="logoSource" style="flex:1; background:#1a1a1a; border:1px solid #444; border-radius:4px; color:#eee; padding:5px 8px; font-size:12px; outline:none">
+                    <option value="">Auto</option>
+                    <option value="simpleicons">Simple Icons (SVG)</option>
+                    <option value="logodev">Logo.dev (PNG)</option>
+                </select>
+                <div id="logoColorRow" style="display:flex; align-items:center; gap:4px">
+                    <span style="color:#777; font-size:11px">Color</span>
+                    <input type="color" id="logoColor" value="#ffffff" title="Icon color (Simple Icons only)" style="width:28px; height:28px; padding:2px; background:#1a1a1a; border:1px solid #444; border-radius:4px; cursor:pointer" />
+                </div>
+            </div>
+            <div style="display:flex; gap:6px; align-items:center">
                 <button id="loadLogoBtn">Load Logo</button>
                 <button id="clearLogoBtn">Clear</button>
                 <span class="status" id="logoStatus"></span>
@@ -174,6 +185,14 @@
     </div>
 
     <div class="row">
+        <label>Timer style</label>
+        <select id="timerStyle">
+            <option value="number">Number (29s)</option>
+            <option value="bar">Progress bar</option>
+        </select>
+    </div>
+
+    <div class="row">
         <label>Font</label>
         <input type="text" id="fontFamily" placeholder="Liberation Sans, sans-serif" />
     </div>
@@ -209,6 +228,11 @@
         }
     }
 
+    function updateColorRowVisibility() {
+        const source = document.getElementById("logoSource").value;
+        document.getElementById("logoColorRow").style.display = source === "logodev" ? "none" : "flex";
+    }
+
     // ── Populate form from settings ───────────────────────────────────────────
 
     function applyActionSettings(s) {
@@ -231,6 +255,10 @@
             ? (actionSettings.output[1] || "")
             : (actionSettings.output || "");
         document.getElementById("website").value = actionSettings.website || "";
+        document.getElementById("logoSource").value = actionSettings.logoSource || "";
+        const storedColor = actionSettings.logoColor;
+        document.getElementById("logoColor").value = storedColor ? "#" + storedColor.replace(/^#/, "") : "#ffffff";
+        updateColorRowVisibility();
         updateLogoPreview(actionSettings.logoData || null);
     }
 
@@ -238,6 +266,7 @@
         globalSettings = s || {};
         document.getElementById("logoDevApiKey").value = globalSettings.logoDevApiKey || "";
         document.getElementById("fontFamily").value = globalSettings.fontFamily || "";
+        document.getElementById("timerStyle").value = globalSettings.timerStyle || "number";
         const encrypt = !!globalSettings.encryptSecrets;
         document.getElementById("encryptSecrets").checked = encrypt;
         document.getElementById("encryptionWarning").style.display = encrypt ? "block" : "none";
@@ -270,11 +299,28 @@
         saveSettings();
     });
 
+    document.getElementById("logoSource").addEventListener("change", (e) => {
+        const val = e.target.value;
+        actionSettings.logoSource = val || undefined;
+        updateColorRowVisibility();
+        saveSettings();
+    });
+
+    document.getElementById("logoColor").addEventListener("change", (e) => {
+        actionSettings.logoColor = e.target.value.replace(/^#/, "");
+        saveSettings();
+    });
+
     document.getElementById("loadLogoBtn").addEventListener("click", () => {
         const website = document.getElementById("website").value.trim();
         if (!website) { document.getElementById("logoStatus").textContent = "Enter a website first."; return; }
         document.getElementById("logoStatus").textContent = "Loading…";
-        send({ event: "sendToPlugin", context: uuid, action: "com.cypher-phunk.otp.gethotp", payload: { type: "loadLogo", website } });
+        const source = document.getElementById("logoSource").value || undefined;
+        const color = source !== "logodev"
+            ? document.getElementById("logoColor").value.replace(/^#/, "")
+            : undefined;
+        send({ event: "sendToPlugin", context: uuid, action: "com.cypher-phunk.otp.gethotp",
+               payload: { type: "loadLogo", website, source, color } });
     });
 
     document.getElementById("clearLogoBtn").addEventListener("click", () => {
@@ -305,6 +351,11 @@
 
     document.getElementById("logoDevApiKey").addEventListener("change", (e) => {
         globalSettings.logoDevApiKey = e.target.value.trim();
+        saveGlobalSettings();
+    });
+
+    document.getElementById("timerStyle").addEventListener("change", (e) => {
+        globalSettings.timerStyle = e.target.value;
         saveGlobalSettings();
     });
 

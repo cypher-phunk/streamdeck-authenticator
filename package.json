@@ -1,6 +1,6 @@
 {
   "name": "com.cypher-phunk.otp",
-  "version": "1.0.3",
+  "version": "1.0.0",
   "description": "OTP generator plugin for Stream Deck",
   "type": "module",
   "scripts": {
@@ -16,7 +16,7 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "Apache-2.0 AND MIT",
   "bugs": {
     "url": "https://github.com/cypher-phunk/otp-streamdeck-plugin/issues"
   },

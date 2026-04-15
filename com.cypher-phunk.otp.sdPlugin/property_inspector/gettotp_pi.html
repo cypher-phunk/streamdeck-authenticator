@@ -103,9 +103,21 @@
 
     <!-- Action settings -->
     <div class="row">
+        <label>Import URI</label>
+        <input type="text" id="otpauthUri" placeholder="otpauth://totp/…" autocomplete="off" />
+        <button id="importUriBtn">Import</button>
+        <span class="status" id="uriStatus"></span>
+    </div>
+
+    <div class="row">
         <label>Secret</label>
         <input type="password" id="secret" placeholder="JBSWY3DPEHPK3PXP" autocomplete="off" />
         <span class="status" id="secretStatus"></span>
+    </div>
+
+    <div class="row" id="issuerRow" style="display:none">
+        <label>Issuer</label>
+        <span id="issuerDisplay" style="flex:1; font-size:12px; color:#aaa;"></span>
     </div>
 
     <div class="row">
@@ -125,6 +137,17 @@
     <div class="row logo-row">
         <label style="padding-top:4px">Logo</label>
         <div style="flex:1; display:flex; flex-direction:column; gap:6px">
+            <div style="display:flex; gap:6px; align-items:center">
+                <select id="logoSource" style="flex:1; background:#1a1a1a; border:1px solid #444; border-radius:4px; color:#eee; padding:5px 8px; font-size:12px; outline:none">
+                    <option value="">Auto</option>
+                    <option value="simpleicons">Simple Icons (SVG)</option>
+                    <option value="logodev">Logo.dev (PNG)</option>
+                </select>
+                <div id="logoColorRow" style="display:flex; align-items:center; gap:4px">
+                    <span style="color:#777; font-size:11px">Color</span>
+                    <input type="color" id="logoColor" value="#ffffff" title="Icon color (Simple Icons only)" style="width:28px; height:28px; padding:2px; background:#1a1a1a; border:1px solid #444; border-radius:4px; cursor:pointer" />
+                </div>
+            </div>
             <div style="display:flex; gap:6px; align-items:center">
                 <button id="loadLogoBtn">Load Logo</button>
                 <button id="clearLogoBtn">Clear</button>
@@ -165,6 +188,14 @@
     </div>
 
     <div class="row">
+        <label>Timer style</label>
+        <select id="timerStyle">
+            <option value="number">Number (29s)</option>
+            <option value="bar">Progress bar</option>
+        </select>
+    </div>
+
+    <div class="row">
         <label>Font</label>
         <input type="text" id="fontFamily" placeholder="Liberation Sans, sans-serif" />
     </div>
@@ -200,6 +231,13 @@
         }
     }
 
+    function updateColorRowVisibility() {
+        const source = document.getElementById("logoSource").value;
+        // Color picker applies to Simple Icons (and auto, which may use SI).
+        // Hide it only when logo.dev is explicitly selected.
+        document.getElementById("logoColorRow").style.display = source === "logodev" ? "none" : "flex";
+    }
+
     // ── Populate form from settings ───────────────────────────────────────────
 
     function applyActionSettings(s) {
@@ -220,13 +258,21 @@
             ? (actionSettings.output[1] || "")
             : (actionSettings.output || "");
         document.getElementById("website").value = actionSettings.website || "";
+        document.getElementById("logoSource").value = actionSettings.logoSource || "";
+        const storedColor = actionSettings.logoColor;
+        document.getElementById("logoColor").value = storedColor ? "#" + storedColor.replace(/^#/, "") : "#ffffff";
+        updateColorRowVisibility();
         updateLogoPreview(actionSettings.logoData || null);
+        const issuer = actionSettings.issuer || "";
+        document.getElementById("issuerDisplay").textContent = issuer;
+        document.getElementById("issuerRow").style.display = issuer ? "flex" : "none";
     }
 
     function applyGlobalSettings(s) {
         globalSettings = s || {};
         document.getElementById("logoDevApiKey").value = globalSettings.logoDevApiKey || "";
         document.getElementById("fontFamily").value = globalSettings.fontFamily || "";
+        document.getElementById("timerStyle").value = globalSettings.timerStyle || "number";
         const encrypt = !!globalSettings.encryptSecrets;
         document.getElementById("encryptSecrets").checked = encrypt;
         document.getElementById("encryptionWarning").style.display = encrypt ? "block" : "none";
@@ -249,11 +295,36 @@
         saveSettings();
     });
 
+    document.getElementById("importUriBtn").addEventListener("click", () => {
+        const uri = document.getElementById("otpauthUri").value.trim();
+        if (!uri) return;
+        document.getElementById("uriStatus").textContent = "Importing…";
+        send({ event: "sendToPlugin", context: uuid, action: "com.cypher-phunk.otp.gettotp",
+               payload: { type: "parseUri", uri } });
+    });
+
+    document.getElementById("logoSource").addEventListener("change", (e) => {
+        const val = e.target.value;
+        actionSettings.logoSource = val || undefined;
+        updateColorRowVisibility();
+        saveSettings();
+    });
+
+    document.getElementById("logoColor").addEventListener("change", (e) => {
+        actionSettings.logoColor = e.target.value.replace(/^#/, "");
+        saveSettings();
+    });
+
     document.getElementById("loadLogoBtn").addEventListener("click", () => {
         const website = document.getElementById("website").value.trim();
         if (!website) { document.getElementById("logoStatus").textContent = "Enter a website first."; return; }
         document.getElementById("logoStatus").textContent = "Loading…";
-        send({ event: "sendToPlugin", context: uuid, action: "com.cypher-phunk.otp.gettotp", payload: { type: "loadLogo", website } });
+        const source = document.getElementById("logoSource").value || undefined;
+        const color = source !== "logodev"
+            ? document.getElementById("logoColor").value.replace(/^#/, "")
+            : undefined;
+        send({ event: "sendToPlugin", context: uuid, action: "com.cypher-phunk.otp.gettotp",
+               payload: { type: "loadLogo", website, source, color } });
     });
 
     document.getElementById("clearLogoBtn").addEventListener("click", () => {
@@ -284,6 +355,11 @@
 
     document.getElementById("logoDevApiKey").addEventListener("change", (e) => {
         globalSettings.logoDevApiKey = e.target.value.trim();
+        saveGlobalSettings();
+    });
+
+    document.getElementById("timerStyle").addEventListener("change", (e) => {
+        globalSettings.timerStyle = e.target.value;
         saveGlobalSettings();
     });
 
@@ -322,11 +398,17 @@
             } else if (data.event === "didReceiveGlobalSettings") {
                 applyGlobalSettings(data.payload.settings);
             } else if (data.event === "sendToPropertyInspector") {
-                // Logo was loaded successfully — settings will update via didReceiveSettings
-                if (data.payload && data.payload.type === "logoLoaded") {
+                const payload = data.payload || {};
+                if (payload.type === "logoLoaded") {
                     document.getElementById("logoStatus").textContent = "Logo loaded!";
-                } else if (data.payload && data.payload.type === "logoFailed") {
+                } else if (payload.type === "logoFailed") {
                     document.getElementById("logoStatus").textContent = "Logo not found.";
+                } else if (payload.type === "uriImported") {
+                    document.getElementById("uriStatus").textContent =
+                        payload.issuer ? `Imported: ${payload.issuer}` : "Imported";
+                    document.getElementById("otpauthUri").value = "";
+                } else if (payload.type === "uriFailed") {
+                    document.getElementById("uriStatus").textContent = "Invalid URI";
                 }
             }
         };

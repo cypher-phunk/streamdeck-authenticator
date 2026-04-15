@@ -52,7 +52,7 @@
   "Description": "Display and output TOTP and HOTP codes on Stream Deck buttons. Works with Google Authenticator, Authy, Ente Auth, and any standard OTP app.",
   "Icon": "assets/plugin_icon",
   "Name": "Authenticator",
-  "Version": "1.0.3.0",
+  "Version": "1.0.0.0",
   "SDKVersion": 3,
   "Software": {
     "MinimumVersion": "7.1"

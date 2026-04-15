@@ -78,4 +78,46 @@ describe("renderButton", () => {
 		const svg = decodeSvg(renderButton({ token: "123456", fontFamily: "Roboto Mono" })!);
 		expect(svg).toContain("Roboto Mono");
 	});
+
+	// ── Timer style: bar ─────────────────────────────────────────────────────
+
+	it("renders a rect bar instead of text when timerStyle is 'bar'", () => {
+		const svg = decodeSvg(renderButton({ token: "123456", remaining: 20, period: 30, timerStyle: "bar" })!);
+		expect(svg).toContain("<rect");
+		expect(svg).not.toMatch(/\d+s<\/text>/);
+	});
+
+	it("bar fill width is proportional to remaining/period", () => {
+		// 15/30 = 50% → fillW = 36
+		const svg = decodeSvg(renderButton({ token: "123456", remaining: 15, period: 30, timerStyle: "bar" })!);
+		expect(svg).toContain('width="36"');
+	});
+
+	it("bar fill width equals full button width when remaining === period", () => {
+		const svg = decodeSvg(renderButton({ token: "123456", remaining: 30, period: 30, timerStyle: "bar" })!);
+		// Two rects: background (width=72) and fill (width=72)
+		const matches = [...svg.matchAll(/width="72"/g)];
+		expect(matches.length).toBeGreaterThanOrEqual(2);
+	});
+
+	it("bar is green when > 50% remaining", () => {
+		const svg = decodeSvg(renderButton({ token: "123456", remaining: 20, period: 30, timerStyle: "bar" })!);
+		expect(svg).toContain("#44cc44");
+	});
+
+	it("bar is orange when 20–50% remaining", () => {
+		const svg = decodeSvg(renderButton({ token: "123456", remaining: 9, period: 30, timerStyle: "bar" })!);
+		expect(svg).toContain("#ff8800");
+	});
+
+	it("bar is red when < 20% remaining", () => {
+		const svg = decodeSvg(renderButton({ token: "123456", remaining: 3, period: 30, timerStyle: "bar" })!);
+		expect(svg).toContain("#ee4444");
+	});
+
+	it("defaults to number style when timerStyle is omitted", () => {
+		const svg = decodeSvg(renderButton({ token: "123456", remaining: 15 })!);
+		expect(svg).toContain("15s");
+		expect(svg).not.toContain("<rect");
+	});
 });

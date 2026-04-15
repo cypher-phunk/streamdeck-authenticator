@@ -1,3 +1,5 @@
+export type LogoSource = "simpleicons" | "logodev";
+
 function normalizeDomain(website: string): string {
 	return website
 		.replace(/^https?:\/\//, "")
@@ -24,31 +26,75 @@ async function tryFetch(url: string): Promise<string | null> {
 }
 
 /**
+ * Derives a Simple Icons slug from a domain name.
+ * Uses the second-to-last segment (SLD) of the domain, which covers the vast
+ * majority of brand names: github.com → "github", accounts.google.com → "google".
+ */
+function domainToSimpleIconsSlug(domain: string): string {
+	const cleaned = domain.replace(/^www\./, "");
+	const parts = cleaned.split(".");
+	return parts.length >= 2 ? parts[parts.length - 2] : parts[0];
+}
+
+async function fetchSimpleIcon(domain: string, color?: string): Promise<string | null> {
+	const slug = domainToSimpleIconsSlug(domain);
+	const colorPart = color ? `/${color}` : "";
+	return tryFetch(`https://cdn.simpleicons.org/${encodeURIComponent(slug)}${colorPart}`);
+}
+
+async function fetchFavicons(domain: string): Promise<string | null> {
+	return (
+		(await tryFetch(`https://${domain}/favicon.ico`)) ??
+		tryFetch(`https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=64`)
+	);
+}
+
+/**
  * Fetches a logo for the given website domain.
  *
- * Priority:
- *  1. Logo.dev API (if `apiKey` is provided) — high-quality brand logos
- *  2. Direct /favicon.ico from the domain
- *  3. Google favicon API fallback
+ * Source behaviour:
+ *  - 'simpleicons': Simple Icons CDN (SVG) → favicon fallbacks. Skips logo.dev.
+ *  - 'logodev':    logo.dev API (PNG, requires apiKey) → favicon fallbacks. Skips Simple Icons.
+ *  - undefined (auto): Simple Icons → logo.dev (if apiKey) → favicon fallbacks.
  *
- * Results are NOT cached here — callers are expected to persist the
- * returned data URL in action settings so the logo survives navigation.
+ * Simple Icons returns clean SVGs whose color can be controlled via the `color`
+ * option (hex string without '#', e.g. "ffffff"). Omit for the brand's own color.
+ * Logo.dev returns PNGs — `color` has no effect for that source.
+ *
+ * Results are NOT cached here — callers are expected to persist the returned
+ * data URL in action settings so the logo survives navigation.
  */
-export async function fetchLogo(website: string, apiKey?: string): Promise<string | null> {
+export async function fetchLogo(
+	website: string,
+	options?: { apiKey?: string; source?: LogoSource; color?: string },
+): Promise<string | null> {
 	const domain = normalizeDomain(website);
 	if (!domain) return null;
 
-	// 1. Logo.dev (high-quality brand logos)
-	if (apiKey) {
-		const logoDevUrl = `https://img.logo.dev/${encodeURIComponent(domain)}?token=${encodeURIComponent(apiKey)}&size=64&format=png`;
-		const dataUrl = await tryFetch(logoDevUrl);
-		if (dataUrl) return dataUrl;
+	const { apiKey, source, color } = options ?? {};
+
+	if (source === "simpleicons") {
+		return (await fetchSimpleIcon(domain, color)) ?? fetchFavicons(domain);
 	}
 
-	// 2. Direct favicon.ico
-	const faviconUrl = await tryFetch(`https://${domain}/favicon.ico`);
-	if (faviconUrl) return faviconUrl;
+	if (source === "logodev") {
+		if (apiKey) {
+			const url = `https://img.logo.dev/${encodeURIComponent(domain)}?token=${encodeURIComponent(apiKey)}&size=64&format=png`;
+			const result = await tryFetch(url);
+			if (result) return result;
+		}
+		return fetchFavicons(domain);
+	}
 
-	// 3. Google favicon API
-	return tryFetch(`https://www.google.com/s2/favicons?domain=${encodeURIComponent(domain)}&sz=64`);
+	// auto: Simple Icons first (clean SVG), then logo.dev, then favicon fallbacks
+	const si = await fetchSimpleIcon(domain, color);
+	if (si) return si;
+
+	if (apiKey) {
+		const url = `https://img.logo.dev/${encodeURIComponent(domain)}?token=${encodeURIComponent(apiKey)}&size=64&format=png`;
+		const result = await tryFetch(url);
+		if (result) return result;
+	}
+
+	return fetchFavicons(domain);
 }
