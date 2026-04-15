@@ -32,7 +32,10 @@
       "Bash(sed -i 's/com\\\\.ggusev\\\\.otp\\\\.gettotp/com.cypher-phunk.otp.gettotp/g' /home/workstation/Code/otp-streamdeck-plugin/com.cypher-phunk.otp.sdPlugin/property_inspector/gettotp_pi.html)",
       "Bash(sed -i 's/com\\\\.ggusev\\\\.otp\\\\.gethotp/com.cypher-phunk.otp.gethotp/g' /home/workstation/Code/otp-streamdeck-plugin/com.cypher-phunk.otp.sdPlugin/property_inspector/gethotp_pi.html)",
       "Bash(git checkout *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git branch *)",
+      "Bash(git push *)"
     ]
   }
 }
