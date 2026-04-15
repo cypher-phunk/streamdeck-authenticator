@@ -1,0 +1,39 @@
+{
+  "name": "com.cypher-phunk.otp",
+  "version": "1.0.3",
+  "description": "OTP generator plugin for Stream Deck",
+  "type": "module",
+  "scripts": {
+    "build": "rollup -c",
+    "watch": "rollup -c -w --watch.onEnd=\"streamdeck restart com.cypher-phunk.otp\"",
+    "pack": "streamdeck pack com.cypher-phunk.otp.sdPlugin --force"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cypher-phunk/otp-streamdeck-plugin.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/cypher-phunk/otp-streamdeck-plugin/issues"
+  },
+  "homepage": "https://github.com/cypher-phunk/otp-streamdeck-plugin#readme",
+  "dependencies": {
+    "@elgato/streamdeck": "^2.0.4",
+    "clipboardy": "^5.3.1",
+    "otpauth": "^9.5.0"
+  },
+  "devDependencies": {
+    "@elgato/cli": "^1.7.4",
+    "@rollup/plugin-commonjs": "^29.0.2",
+    "@rollup/plugin-node-resolve": "^16.0.3",
+    "@rollup/plugin-terser": "^1.0.0",
+    "@rollup/plugin-typescript": "^12.3.0",
+    "@tsconfig/node20": "^20.1.9",
+    "@types/node": "^25.6.0",
+    "rollup": "^4.60.1",
+    "tslib": "^2.8.1",
+    "typescript": "^6.0.2"
+  }
+}

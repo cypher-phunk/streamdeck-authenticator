@@ -1,0 +1,77 @@
+{
+  "Actions": [
+    {
+      "UUID": "com.cypher-phunk.otp.gettotp",
+      "Icon": "assets/gettotp/action_icon",
+      "Name": "TOTP",
+      "States": [
+        {
+          "Image": "assets/gettotp/key_icon",
+          "Name": "base",
+          "TitleColor": "#FFFFFF",
+          "TitleAlignment": "bottom",
+          "FontFamily": "Microsoft Sans Serif",
+          "FontSize": 13
+        }
+      ],
+      "DisableAutomaticStates": true,
+      "PropertyInspectorPath": "property_inspector/gettotp_pi.html",
+      "SupportedInMultiActions": true,
+      "Controllers": [
+        "Keypad"
+      ],
+      "Tooltip": "Generate Time-based OTP",
+      "UserTitleEnabled": false
+    },
+    {
+      "UUID": "com.cypher-phunk.otp.gethotp",
+      "Icon": "assets/gethotp/action_icon",
+      "Name": "HOTP",
+      "States": [
+        {
+          "Image": "assets/gethotp/key_icon",
+          "Name": "base",
+          "TitleColor": "#FFFFFF",
+          "TitleAlignment": "bottom",
+          "FontFamily": "Microsoft Sans Serif",
+          "FontSize": 13
+        }
+      ],
+      "DisableAutomaticStates": true,
+      "PropertyInspectorPath": "property_inspector/gethotp_pi.html",
+      "SupportedInMultiActions": true,
+      "Controllers": [
+        "Keypad"
+      ],
+      "Tooltip": "Generate Counter-based OTP",
+      "UserTitleEnabled": false
+    }
+  ],
+  "Author": "cypher-phunk",
+  "CodePath": "bin/plugin.js",
+  "Description": "Display and output TOTP and HOTP codes on Stream Deck buttons. Works with Google Authenticator, Authy, Ente Auth, and any standard OTP app.",
+  "Icon": "assets/plugin_icon",
+  "Name": "Authenticator",
+  "Version": "1.0.3.0",
+  "SDKVersion": 3,
+  "Software": {
+    "MinimumVersion": "7.1"
+  },
+  "OS": [
+    {
+      "Platform": "mac",
+      "MinimumVersion": "12"
+    },
+    {
+      "Platform": "windows",
+      "MinimumVersion": "10"
+    }
+  ],
+  "Nodejs": {
+    "Version": "20",
+    "Debug": "enabled"
+  },
+  "Category": "Authenticator",
+  "CategoryIcon": "assets/authorization_category_icon",
+  "UUID": "com.cypher-phunk.otp"
+}

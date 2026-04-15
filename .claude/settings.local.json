@@ -1,0 +1,38 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c \"import pyotp; help\\(pyotp.TOTP.now\\)\")",
+      "Bash(python3 *)",
+      "Bash(npm install *)",
+      "Bash(streamdeck version *)",
+      "Bash(streamdeck --help)",
+      "Bash(streamdeck --version)",
+      "Bash(streamdeck create *)",
+      "Read(//home/workstation/.var/app/com.vscodium.codium/data/node/lib/node_modules/@elgato/**)",
+      "Read(//home/workstation/.nvm/versions/**)",
+      "Read(//usr/local/lib/node_modules/**)",
+      "Bash(node -e \"require.resolve\\('@elgato/streamdeck'\\)\")",
+      "Bash(npm root *)",
+      "Bash(cat /home/workstation/.var/app/com.vscodium.codium/data/node/lib/node_modules/@elgato/cli/template/src/actions/*.ts)",
+      "Bash(npm show *)",
+      "Bash(rm -rf code/ init.py run.sh run.bat)",
+      "Bash(rm -rf property_inspector/streamdeck-javascript-sdk/)",
+      "Bash(rm -f property_inspector/pi_template.html property_inspector/gettotp_pi.py property_inspector/gethotp_pi.py)",
+      "Bash(npm run *)",
+      "Bash(streamdeck validate *)",
+      "Bash(convert --version)",
+      "Bash(rsvg-convert --version)",
+      "Bash(inkscape --version)",
+      "Bash(streamdeck pack *)",
+      "WebSearch",
+      "WebFetch(domain:docs.logo.dev)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:www.logo.dev)",
+      "Bash(git mv *)",
+      "Bash(sed -i 's/com\\\\.ggusev\\\\.otp\\\\.gettotp/com.cypher-phunk.otp.gettotp/g' /home/workstation/Code/otp-streamdeck-plugin/com.cypher-phunk.otp.sdPlugin/property_inspector/gettotp_pi.html)",
+      "Bash(sed -i 's/com\\\\.ggusev\\\\.otp\\\\.gethotp/com.cypher-phunk.otp.gethotp/g' /home/workstation/Code/otp-streamdeck-plugin/com.cypher-phunk.otp.sdPlugin/property_inspector/gethotp_pi.html)",
+      "Bash(git checkout *)",
+      "Bash(git add *)"
+    ]
+  }
+}

@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html>
+<head lang="en">
+    <title>HOTP Settings</title>
+    <meta charset="utf-8" />
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: system-ui, sans-serif;
+            font-size: 13px;
+            color: #d0d0d0;
+            background: #2d2d2d;
+            padding: 12px;
+        }
+        .row {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+            gap: 8px;
+        }
+        label {
+            width: 110px;
+            flex-shrink: 0;
+            color: #999;
+            font-size: 12px;
+        }
+        input[type="text"], input[type="password"], input[type="number"], select {
+            flex: 1;
+            background: #1a1a1a;
+            border: 1px solid #444;
+            border-radius: 4px;
+            color: #eee;
+            padding: 5px 8px;
+            font-size: 13px;
+            outline: none;
+        }
+        input[type="text"]:focus, input[type="password"]:focus,
+        input[type="number"]:focus, select:focus { border-color: #777; }
+        input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; }
+        button {
+            background: #444;
+            border: 1px solid #666;
+            border-radius: 4px;
+            color: #eee;
+            cursor: pointer;
+            font-size: 12px;
+            padding: 5px 10px;
+            white-space: nowrap;
+        }
+        button:hover { background: #555; }
+        button:active { background: #333; }
+        .logo-row { align-items: flex-start; }
+        .logo-preview {
+            width: 36px; height: 36px;
+            border: 1px solid #444;
+            border-radius: 4px;
+            background: #1a1a1a;
+            object-fit: contain;
+            display: none;
+        }
+        .logo-preview.visible { display: block; }
+        .divider {
+            border: none;
+            border-top: 1px solid #444;
+            margin: 12px 0;
+        }
+        .section-title {
+            font-size: 11px;
+            color: #777;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            margin-bottom: 8px;
+        }
+        .status {
+            font-size: 11px;
+            color: #888;
+            margin-left: 4px;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Action settings -->
+    <div class="row">
+        <label>Secret</label>
+        <input type="password" id="secret" placeholder="JBSWY3DPEHPK3PXP" autocomplete="off" />
+    </div>
+
+    <div class="row">
+        <label>Initial count</label>
+        <input type="number" id="initial_count" placeholder="0" min="0" step="1" />
+    </div>
+
+    <div class="row">
+        <label>Auto increase</label>
+        <input type="checkbox" id="auto_increase" />
+    </div>
+
+    <div class="row">
+        <label>Output</label>
+        <select id="output">
+            <option value="">— select —</option>
+            <option value="Clipboard">Clipboard</option>
+            <option value="Type">Type</option>
+        </select>
+    </div>
+
+    <div class="row">
+        <label>Website</label>
+        <input type="text" id="website" placeholder="github.com" />
+    </div>
+
+    <div class="row logo-row">
+        <label style="padding-top:4px">Logo</label>
+        <div style="flex:1; display:flex; flex-direction:column; gap:6px">
+            <div style="display:flex; gap:6px; align-items:center">
+                <button id="loadLogoBtn">Load Logo</button>
+                <button id="clearLogoBtn">Clear</button>
+                <span class="status" id="logoStatus"></span>
+                <img id="logoPreview" class="logo-preview" alt="logo preview" />
+            </div>
+            <div style="display:flex; gap:6px; align-items:center">
+                <label for="customLogoInput" style="width:auto; color:#aaa; cursor:pointer; padding:5px 10px; background:#444; border:1px solid #666; border-radius:4px; font-size:12px">Upload custom…</label>
+                <input type="file" id="customLogoInput" accept="image/*" style="display:none" />
+            </div>
+        </div>
+    </div>
+
+    <hr class="divider" />
+
+    <!-- Plugin-wide settings -->
+    <div class="section-title">Plugin Settings</div>
+
+    <div class="row">
+        <label>Logo.dev key</label>
+        <input type="password" id="logoDevApiKey" placeholder="pk_xxxxxxx" autocomplete="off" />
+    </div>
+
+    <div class="row">
+        <label>Font</label>
+        <input type="text" id="fontFamily" placeholder="Liberation Sans, sans-serif" />
+    </div>
+
+<script>
+    let ws = null;
+    let uuid = null;
+    let actionSettings = {};
+    let globalSettings = {};
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
+    function send(obj) {
+        if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
+    }
+
+    function saveSettings() {
+        send({ event: "setSettings", context: uuid, payload: actionSettings });
+    }
+
+    function saveGlobalSettings() {
+        send({ event: "setGlobalSettings", context: uuid, payload: globalSettings });
+    }
+
+    function updateLogoPreview(dataUrl) {
+        const img = document.getElementById("logoPreview");
+        if (dataUrl) {
+            img.src = dataUrl;
+            img.classList.add("visible");
+        } else {
+            img.src = "";
+            img.classList.remove("visible");
+        }
+    }
+
+    // ── Populate form from settings ───────────────────────────────────────────
+
+    function applyActionSettings(s) {
+        actionSettings = s || {};
+        document.getElementById("secret").value = actionSettings.secret || "";
+        document.getElementById("initial_count").value = actionSettings.initial_count ?? "";
+        document.getElementById("auto_increase").checked = !!actionSettings.auto_increase;
+        document.getElementById("output").value = Array.isArray(actionSettings.output)
+            ? (actionSettings.output[1] || "")
+            : (actionSettings.output || "");
+        document.getElementById("website").value = actionSettings.website || "";
+        updateLogoPreview(actionSettings.logoData || null);
+    }
+
+    function applyGlobalSettings(s) {
+        globalSettings = s || {};
+        document.getElementById("logoDevApiKey").value = globalSettings.logoDevApiKey || "";
+        document.getElementById("fontFamily").value = globalSettings.fontFamily || "";
+    }
+
+    // ── DOM event wiring ─────────────────────────────────────────────────────
+
+    document.getElementById("secret").addEventListener("change", (e) => {
+        actionSettings.secret = e.target.value.trim().toUpperCase().replace(/\s+/g, "");
+        saveSettings();
+    });
+
+    document.getElementById("initial_count").addEventListener("change", (e) => {
+        actionSettings.initial_count = e.target.value.trim();
+        saveSettings();
+    });
+
+    document.getElementById("auto_increase").addEventListener("change", (e) => {
+        actionSettings.auto_increase = e.target.checked;
+        saveSettings();
+    });
+
+    document.getElementById("output").addEventListener("change", (e) => {
+        actionSettings.output = e.target.value;
+        saveSettings();
+    });
+
+    document.getElementById("website").addEventListener("change", (e) => {
+        actionSettings.website = e.target.value.trim();
+        saveSettings();
+    });
+
+    document.getElementById("loadLogoBtn").addEventListener("click", () => {
+        const website = document.getElementById("website").value.trim();
+        if (!website) { document.getElementById("logoStatus").textContent = "Enter a website first."; return; }
+        document.getElementById("logoStatus").textContent = "Loading…";
+        send({ event: "sendToPlugin", context: uuid, action: "com.cypher-phunk.otp.gethotp", payload: { type: "loadLogo", website } });
+    });
+
+    document.getElementById("clearLogoBtn").addEventListener("click", () => {
+        delete actionSettings.logoData;
+        saveSettings();
+        updateLogoPreview(null);
+        document.getElementById("logoStatus").textContent = "";
+    });
+
+    document.getElementById("customLogoInput").addEventListener("change", (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+            actionSettings.logoData = evt.target.result;
+            saveSettings();
+            updateLogoPreview(actionSettings.logoData);
+            document.getElementById("logoStatus").textContent = "Custom logo set.";
+        };
+        reader.readAsDataURL(file);
+    });
+
+    document.getElementById("logoDevApiKey").addEventListener("change", (e) => {
+        globalSettings.logoDevApiKey = e.target.value.trim();
+        saveGlobalSettings();
+    });
+
+    document.getElementById("fontFamily").addEventListener("change", (e) => {
+        globalSettings.fontFamily = e.target.value.trim();
+        saveGlobalSettings();
+    });
+
+    // ── Stream Deck WebSocket ─────────────────────────────────────────────────
+
+    function connectElgatoStreamDeckSocket(inPort, inUUID, inRegisterEvent, inInfo, inActionInfo) {
+        uuid = inUUID;
+
+        // Pre-populate from the ActionInfo payload (avoids a round-trip on first load)
+        if (inActionInfo) {
+            try {
+                const info = typeof inActionInfo === "string" ? JSON.parse(inActionInfo) : inActionInfo;
+                if (info.payload && info.payload.settings) applyActionSettings(info.payload.settings);
+            } catch {}
+        }
+
+        ws = new WebSocket("ws://127.0.0.1:" + inPort);
+
+        ws.onopen = () => {
+            send({ event: inRegisterEvent, uuid: inUUID });
+            send({ event: "getSettings", context: inUUID });
+            send({ event: "getGlobalSettings", context: inUUID });
+        };
+
+        ws.onmessage = (evt) => {
+            let data;
+            try { data = JSON.parse(evt.data); } catch { return; }
+
+            if (data.event === "didReceiveSettings") {
+                applyActionSettings(data.payload.settings);
+            } else if (data.event === "didReceiveGlobalSettings") {
+                applyGlobalSettings(data.payload.settings);
+            } else if (data.event === "sendToPropertyInspector") {
+                if (data.payload && data.payload.type === "logoLoaded") {
+                    document.getElementById("logoStatus").textContent = "Logo loaded!";
+                } else if (data.payload && data.payload.type === "logoFailed") {
+                    document.getElementById("logoStatus").textContent = "Logo not found.";
+                }
+            }
+        };
+    }
+</script>
+</body>
+</html>
