@@ -11,6 +11,9 @@ com.cypher-phunk.otp.sdPlugin/bin/
 # Claude Code
 .claude/
 
+# Test environment (contains API keys)
+.env.test
+
 # OS
 .DS_Store
 Thumbs.db
@@ -21,3 +24,10 @@ Thumbs.db
 
 # Logs
 npm-debug.log*
+*.log
+
+# TypeScript
+*.tsbuildinfo
+
+# Package lock (optional — remove this line if you want to commit it)
+# package-lock.json

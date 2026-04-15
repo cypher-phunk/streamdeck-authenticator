@@ -6,6 +6,8 @@ function normalizeDomain(website: string): string {
 		.toLowerCase();
 }
 
+const SVG_SAFE_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml"]);
+
 async function tryFetch(url: string): Promise<string | null> {
 	try {
 		const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
@@ -13,6 +15,7 @@ async function tryFetch(url: string): Promise<string | null> {
 		const buffer = await response.arrayBuffer();
 		if (buffer.byteLength < 64) return null; // skip empty/tiny responses
 		const mimeType = response.headers.get("content-type")?.split(";")[0].trim() ?? "image/png";
+		if (!SVG_SAFE_MIME_TYPES.has(mimeType)) return null; // .ico and similar won't render in SVG <image>
 		const base64 = Buffer.from(buffer).toString("base64");
 		return `data:${mimeType};base64,${base64}`;
 	} catch {

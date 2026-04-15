@@ -77,6 +77,26 @@
             color: #888;
             margin-left: 4px;
         }
+        .warning-box {
+            background: #3a2a00;
+            border: 1px solid #664400;
+            border-radius: 4px;
+            color: #ffcc66;
+            font-size: 11px;
+            line-height: 1.5;
+            margin-bottom: 8px;
+            padding: 8px 10px;
+        }
+        .info-box {
+            background: #1a2a1a;
+            border: 1px solid #2a4a2a;
+            border-radius: 4px;
+            color: #88bb88;
+            font-size: 11px;
+            line-height: 1.5;
+            margin-bottom: 8px;
+            padding: 8px 10px;
+        }
     </style>
 </head>
 <body>
@@ -85,6 +105,7 @@
     <div class="row">
         <label>Secret</label>
         <input type="password" id="secret" placeholder="JBSWY3DPEHPK3PXP" autocomplete="off" />
+        <span class="status" id="secretStatus"></span>
     </div>
 
     <div class="row">
@@ -121,6 +142,22 @@
 
     <!-- Plugin-wide settings -->
     <div class="section-title">Plugin Settings</div>
+
+    <div class="row">
+        <label>Encrypt secrets</label>
+        <input type="checkbox" id="encryptSecrets" />
+    </div>
+    <div id="encryptionWarning" class="warning-box" style="display:none">
+        ⚠ Secrets are encrypted with a key derived from your system username and hostname.
+        They <strong>cannot be decrypted</strong> if you change your username, rename your
+        computer, or move your Stream Deck profile to another machine — you will need to
+        re-enter them. This plugin should be treated as a <strong>secondary</strong> store only.
+    </div>
+    <div class="info-box">
+        💡 For primary storage we recommend a dedicated open-source authenticator.
+        <strong>Ente Auth</strong> (ente.io/auth) is open-source and end-to-end encrypted
+        across all your devices.
+    </div>
 
     <div class="row">
         <label>Logo.dev key</label>
@@ -167,7 +204,18 @@
 
     function applyActionSettings(s) {
         actionSettings = s || {};
-        document.getElementById("secret").value = actionSettings.secret || "";
+        const secretIsEncrypted = typeof actionSettings.secret === "string" && actionSettings.secret.startsWith("enc:v1:");
+        const secretInput = document.getElementById("secret");
+        const secretStatus = document.getElementById("secretStatus");
+        if (secretIsEncrypted) {
+            secretInput.value = "";
+            secretInput.placeholder = "Stored encrypted — enter new value to change";
+            secretStatus.textContent = "🔒 Encrypted";
+        } else {
+            secretInput.value = actionSettings.secret || "";
+            secretInput.placeholder = "JBSWY3DPEHPK3PXP";
+            secretStatus.textContent = "";
+        }
         document.getElementById("output").value = Array.isArray(actionSettings.output)
             ? (actionSettings.output[1] || "")
             : (actionSettings.output || "");
@@ -179,6 +227,9 @@
         globalSettings = s || {};
         document.getElementById("logoDevApiKey").value = globalSettings.logoDevApiKey || "";
         document.getElementById("fontFamily").value = globalSettings.fontFamily || "";
+        const encrypt = !!globalSettings.encryptSecrets;
+        document.getElementById("encryptSecrets").checked = encrypt;
+        document.getElementById("encryptionWarning").style.display = encrypt ? "block" : "none";
     }
 
     // ── DOM event wiring ─────────────────────────────────────────────────────
@@ -223,6 +274,12 @@
             document.getElementById("logoStatus").textContent = "Custom logo set.";
         };
         reader.readAsDataURL(file);
+    });
+
+    document.getElementById("encryptSecrets").addEventListener("change", (e) => {
+        globalSettings.encryptSecrets = e.target.checked;
+        document.getElementById("encryptionWarning").style.display = e.target.checked ? "block" : "none";
+        saveGlobalSettings();
     });
 
     document.getElementById("logoDevApiKey").addEventListener("change", (e) => {

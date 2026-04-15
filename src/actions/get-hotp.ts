@@ -9,8 +9,9 @@ import streamDeck, {
 import type { KeyAction } from "@elgato/streamdeck";
 import clipboard from "clipboardy";
 import { HOTP, Secret } from "otpauth";
+import { applyEncryptionPreference, decryptSecret } from "../encryption.js";
 import { fetchLogo } from "../logo.js";
-import { getGlobalSettings, onGlobalSettingsChanged } from "../globals.js";
+import { GlobalSettings, getGlobalSettings, onGlobalSettingsChanged } from "../globals.js";
 import { renderButton } from "../render.js";
 import { resolveOutputType, typeText } from "../utils.js";
 
@@ -32,31 +33,57 @@ export class GetHOTP extends SingletonAction<HotpSettings> {
 
 	constructor() {
 		super();
-		onGlobalSettingsChanged(() => {
+		onGlobalSettingsChanged((globalSettings: GlobalSettings) => {
 			for (const [id, keyAction] of this.buttonActions) {
 				const settings = this.settingsCache.get(id) ?? {};
-				void this.refreshDisplay(keyAction, settings);
+				const updated = applyEncryptionPreference(settings, globalSettings.encryptSecrets ?? false);
+				if (updated) {
+					// Encryption preference changed — migrate the stored secret.
+					// onDidReceiveSettings will fire and refresh the display.
+					void keyAction.setSettings(updated);
+				} else {
+					void this.refreshDisplay(keyAction, settings);
+				}
 			}
 		});
 	}
 
 	override async onWillAppear(ev: WillAppearEvent<HotpSettings>): Promise<void> {
 		const keyAction = ev.action as KeyAction<HotpSettings>;
+		// Set buttonActions first so onDidReceiveSettings (triggered by setSettings below) can find it.
 		this.buttonActions.set(ev.action.id, keyAction);
+
+		const { encryptSecrets } = getGlobalSettings();
+		const updated = applyEncryptionPreference(ev.payload.settings, encryptSecrets ?? false);
+		if (updated) {
+			await keyAction.setSettings(updated);
+			// onDidReceiveSettings will populate settingsCache and refresh the display.
+			return;
+		}
+
 		this.settingsCache.set(ev.action.id, ev.payload.settings);
 		await this.refreshDisplay(keyAction, ev.payload.settings);
 	}
 
 	override async onDidReceiveSettings(ev: DidReceiveSettingsEvent<HotpSettings>): Promise<void> {
 		const keyAction = ev.action as KeyAction<HotpSettings>;
+		const { encryptSecrets } = getGlobalSettings();
+		const updated = applyEncryptionPreference(ev.payload.settings, encryptSecrets ?? false);
+		if (updated) {
+			await keyAction.setSettings(updated);
+			// onDidReceiveSettings will fire again once the migration is persisted.
+			return;
+		}
+
 		this.buttonActions.set(ev.action.id, keyAction);
 		this.settingsCache.set(ev.action.id, ev.payload.settings);
 		await this.refreshDisplay(keyAction, ev.payload.settings);
 	}
 
 	override async onKeyDown(ev: KeyDownEvent<HotpSettings>): Promise<void> {
-		const { secret, initial_count, auto_increase, output } = ev.payload.settings;
+		const { secret: rawSecret, initial_count, auto_increase, output } = ev.payload.settings;
 		const outputType = resolveOutputType(output);
+		const secret = rawSecret ? decryptSecret(rawSecret) : null;
 
 		if (!secret || initial_count === undefined || initial_count === "" || !outputType) {
 			await ev.action.showAlert();
@@ -127,7 +154,8 @@ export class GetHOTP extends SingletonAction<HotpSettings> {
 	// ── Display ───────────────────────────────────────────────────────────────
 
 	private async refreshDisplay(keyAction: KeyAction<HotpSettings>, settings: HotpSettings): Promise<void> {
-		const { secret, initial_count, logoData } = settings;
+		const { secret: rawSecret, initial_count, logoData } = settings;
+		const secret = rawSecret ? decryptSecret(rawSecret) : null;
 		const { fontFamily } = getGlobalSettings();
 
 		if (!secret || initial_count === undefined || initial_count === "") {

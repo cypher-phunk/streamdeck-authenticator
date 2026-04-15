@@ -3,6 +3,7 @@ import streamDeck from "@elgato/streamdeck";
 export type GlobalSettings = {
 	logoDevApiKey?: string;
 	fontFamily?: string;
+	encryptSecrets?: boolean;
 };
 
 export const DEFAULT_FONT = "Liberation Sans, sans-serif";

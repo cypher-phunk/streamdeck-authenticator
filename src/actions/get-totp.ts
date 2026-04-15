@@ -10,8 +10,9 @@ import streamDeck, {
 import type { KeyAction } from "@elgato/streamdeck";
 import clipboard from "clipboardy";
 import { TOTP, Secret } from "otpauth";
+import { applyEncryptionPreference, decryptSecret } from "../encryption.js";
 import { fetchLogo } from "../logo.js";
-import { getGlobalSettings, onGlobalSettingsChanged } from "../globals.js";
+import { GlobalSettings, getGlobalSettings, onGlobalSettingsChanged } from "../globals.js";
 import { renderButton } from "../render.js";
 import { resolveOutputType, typeText } from "../utils.js";
 
@@ -33,18 +34,34 @@ export class GetTOTP extends SingletonAction<TotpSettings> {
 
 	constructor() {
 		super();
-		// Re-render all active buttons when global settings (font, API key) change.
-		onGlobalSettingsChanged(() => {
+		onGlobalSettingsChanged((globalSettings: GlobalSettings) => {
 			for (const [id, keyAction] of this.buttonActions) {
 				const settings = this.settingsCache.get(id) ?? {};
-				void this.refreshDisplay(keyAction, settings);
+				const updated = applyEncryptionPreference(settings, globalSettings.encryptSecrets ?? false);
+				if (updated) {
+					// Encryption preference changed — migrate the stored secret.
+					// onDidReceiveSettings will fire and refresh the display.
+					void keyAction.setSettings(updated);
+				} else {
+					void this.refreshDisplay(keyAction, settings);
+				}
 			}
 		});
 	}
 
 	override async onWillAppear(ev: WillAppearEvent<TotpSettings>): Promise<void> {
 		const keyAction = ev.action as KeyAction<TotpSettings>;
+		// Set buttonActions first so onDidReceiveSettings (triggered by setSettings below) can find it.
 		this.buttonActions.set(ev.action.id, keyAction);
+
+		const { encryptSecrets } = getGlobalSettings();
+		const updated = applyEncryptionPreference(ev.payload.settings, encryptSecrets ?? false);
+		if (updated) {
+			await keyAction.setSettings(updated);
+			// onDidReceiveSettings will populate settingsCache and start the timer.
+			return;
+		}
+
 		this.settingsCache.set(ev.action.id, ev.payload.settings);
 		this.startTimer(ev.action.id, ev.payload.settings);
 	}
@@ -57,6 +74,14 @@ export class GetTOTP extends SingletonAction<TotpSettings> {
 
 	override async onDidReceiveSettings(ev: DidReceiveSettingsEvent<TotpSettings>): Promise<void> {
 		const keyAction = ev.action as KeyAction<TotpSettings>;
+		const { encryptSecrets } = getGlobalSettings();
+		const updated = applyEncryptionPreference(ev.payload.settings, encryptSecrets ?? false);
+		if (updated) {
+			await keyAction.setSettings(updated);
+			// onDidReceiveSettings will fire again once the migration is persisted.
+			return;
+		}
+
 		this.stopTimer(ev.action.id);
 		this.buttonActions.set(ev.action.id, keyAction);
 		this.settingsCache.set(ev.action.id, ev.payload.settings);
@@ -64,8 +89,9 @@ export class GetTOTP extends SingletonAction<TotpSettings> {
 	}
 
 	override async onKeyDown(ev: KeyDownEvent<TotpSettings>): Promise<void> {
-		const { secret, output } = ev.payload.settings;
+		const { secret: rawSecret, output } = ev.payload.settings;
 		const outputType = resolveOutputType(output);
+		const secret = rawSecret ? decryptSecret(rawSecret) : null;
 
 		if (!secret || !outputType) {
 			await ev.action.showAlert();
@@ -143,7 +169,8 @@ export class GetTOTP extends SingletonAction<TotpSettings> {
 	// ── Display ───────────────────────────────────────────────────────────────
 
 	private async refreshDisplay(keyAction: KeyAction<TotpSettings>, settings: TotpSettings): Promise<void> {
-		const { secret, logoData } = settings;
+		const { secret: rawSecret, logoData } = settings;
+		const secret = rawSecret ? decryptSecret(rawSecret) : null;
 		const { fontFamily } = getGlobalSettings();
 
 		if (!secret) {
