@@ -1,12 +1,12 @@
 {
   "name": "com.cypher-phunk.otp",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "OTP generator plugin for Stream Deck",
   "type": "module",
   "scripts": {
     "build": "rollup -c",
     "watch": "rollup -c -w --watch.onEnd=\"streamdeck restart com.cypher-phunk.otp\"",
-    "pack": "streamdeck pack com.cypher-phunk.otp.sdPlugin --force && mv com.cypher-phunk.otp.streamDeckPlugin \"com.cypher-phunk.otp-v$(npm pkg get version | tr -d '\"').streamDeckPlugin\"",
+    "pack": "VERSION=$(node scripts/bump-build.mjs) && rm -f builds/*.streamDeckPlugin && streamdeck pack com.cypher-phunk.otp.sdPlugin --force && mv com.cypher-phunk.otp.streamDeckPlugin \"builds/com.cypher-phunk.otp-v${VERSION}.streamDeckPlugin\"",
     "test": "vitest run",
     "test:watch": "vitest"
   },

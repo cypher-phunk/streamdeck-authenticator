@@ -91,6 +91,3 @@ npm run pack    # packages → com.cypher-phunk.otp.streamDeckPlugin
 
 Requires Node.js 20+ and the [Elgato Stream Deck CLI](https://github.com/elgatosf/cli) (`npm install -g @elgato/cli`).
 
-## Attribution
-
-This plugin is a hard fork of [otp-streamdeck-plugin](https://github.com/gri-gus/otp-streamdeck-plugin) by [Grigoriy Gusev](https://github.com/gri-gus), licensed under Apache 2.0. The plugin has been substantially rewritten (Python → TypeScript, V1 SDK → V2 SDK) with significant new features. See [ATTRIBUTION.md](ATTRIBUTION.md) for the full attribution notice.

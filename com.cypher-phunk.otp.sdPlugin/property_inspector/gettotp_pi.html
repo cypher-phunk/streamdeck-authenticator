@@ -407,6 +407,17 @@
                     document.getElementById("uriStatus").textContent =
                         payload.issuer ? `Imported: ${payload.issuer}` : "Imported";
                     document.getElementById("otpauthUri").value = "";
+                    // Auto-search for a logo if one isn't already set
+                    const searchTerm = actionSettings.website || payload.issuer;
+                    if (!actionSettings.logoData && searchTerm) {
+                        document.getElementById("logoStatus").textContent = "Loading…";
+                        const source = document.getElementById("logoSource").value || undefined;
+                        const color = source !== "logodev"
+                            ? document.getElementById("logoColor").value.replace(/^#/, "")
+                            : undefined;
+                        send({ event: "sendToPlugin", context: uuid, action: "com.cypher-phunk.otp.gettotp",
+                               payload: { type: "loadLogo", website: searchTerm, source, color } });
+                    }
                 } else if (payload.type === "uriFailed") {
                     document.getElementById("uriStatus").textContent = "Invalid URI";
                 }

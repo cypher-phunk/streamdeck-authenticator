@@ -3,7 +3,7 @@ node_modules/
 
 # Build output
 com.cypher-phunk.otp.sdPlugin/bin/
-*.streamDeckPlugin
+builds/*.streamDeckPlugin
 
 # Sourcemaps
 *.js.map
