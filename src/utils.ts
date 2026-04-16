@@ -5,9 +5,9 @@ import { TOTP, URI } from "otpauth";
 
 const execAsync = promisify(exec);
 
-export function resolveOutputType(output: string | [string[], string | null] | undefined): string | null {
-	if (Array.isArray(output)) return output[1] ?? null;
-	return output ?? null;
+export function resolveOutputType(output: string | [string[], string | null] | undefined): string {
+	if (Array.isArray(output)) return output[1] ?? "Clipboard";
+	return output ?? "Clipboard";
 }
 
 export async function typeText(text: string): Promise<void> {

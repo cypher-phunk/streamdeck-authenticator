@@ -7,8 +7,8 @@ describe("resolveOutputType", () => {
 		expect(resolveOutputType("Type")).toBe("Type");
 	});
 
-	it("returns null for undefined", () => {
-		expect(resolveOutputType(undefined)).toBeNull();
+	it("returns Clipboard for undefined (default output)", () => {
+		expect(resolveOutputType(undefined)).toBe("Clipboard");
 	});
 
 	it("returns the second element when given a [choices, selected] tuple", () => {
@@ -16,8 +16,8 @@ describe("resolveOutputType", () => {
 		expect(resolveOutputType([["Clipboard", "Type"], "Type"])).toBe("Type");
 	});
 
-	it("returns null when the selected value in the tuple is null", () => {
-		expect(resolveOutputType([["Clipboard", "Type"], null])).toBeNull();
+	it("returns Clipboard when the selected value in the tuple is null (default output)", () => {
+		expect(resolveOutputType([["Clipboard", "Type"], null])).toBe("Clipboard");
 	});
 
 	it("returns an empty string directly (no coercion to null)", () => {
